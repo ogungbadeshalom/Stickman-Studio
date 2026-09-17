@@ -45,6 +45,8 @@ def run_pipeline(
     upload: bool = False,
     bucket: Optional[str] = None,
     project_dir: Optional[str] = None,
+    flow_staged: bool = False,
+    flow_import_dir: Optional[str] = None,
 ) -> dict:
     """Execute the full pipeline and return a summary dict.
 
@@ -85,18 +87,30 @@ def run_pipeline(
         board = ai_engine.generate_script(topic, out, scenes)
 
     # ------------------------------------------------------------------ #
-    # Phase 2 — Images (Imagen) — cached per-scene
+    # Phase 2 — Images
     # ------------------------------------------------------------------ #
-    all_images_cached = all(
-        s.image_path and Path(s.image_path).is_file()
-        for s in board.scenes
-    )
-    if all_images_cached:
-        log.info("-- Phase 2: Images (all %d cached) --", len(board.scenes))
+    if flow_staged:
+        from stickman_studio.phases import flow_stage
+        log.info("-- Phase 2: Images (Google Flow staged) --")
+        flow_stage.run(board, out)
+        # import T470-generated scenes if present
+        imp_dir = Path(flow_import_dir) if flow_import_dir else (out / "flow_out")
+        if imp_dir.is_dir():
+            flow_stage.import_flow_images(board, out, imp_dir)
+            log.info("  imported scenes from %s", imp_dir)
+        else:
+            log.info("  no flow_out/ yet — run the T470 batch tool, then re-run with --flow-staged")
     else:
-        init_vertex()
-        log.info("-- Phase 2: Images (Imagen) --")
-        board = ai_engine.generate_images(board, out)
+        all_images_cached = all(
+            s.image_path and Path(s.image_path).is_file()
+            for s in board.scenes
+        )
+        if all_images_cached:
+            log.info("-- Phase 2: Images (all %d cached) --", len(board.scenes))
+        else:
+            init_vertex()
+            log.info("-- Phase 2: Images (Imagen) --")
+            board = ai_engine.generate_images(board, out)
 
     # ------------------------------------------------------------------ #
     # Phase 3 — Audio (TTS) — cached per-scene
@@ -221,6 +235,11 @@ def run_pipeline(
               help="GCS bucket (default: GCS_STAGING_BUCKET from .env)")
 @click.option("--project-dir", "-d", default=None,
               help="Output directory (default: projects/<slug>)")
+@click.option("--flow-staged", is_flag=True, default=False,
+              help="Use Google Flow images: write flow_prompts.txt, then import "
+                   "T470-generated scenes from projects/<slug>/flow_out (no VPS image API)")
+@click.option("--flow-import-dir", default=None,
+              help="Dir containing T470-generated scene_001.jpg files (default: <project>/flow_out)")
 @click.option("--youtube", "-yt", is_flag=True, default=False,
               help="Upload final video to YouTube after generation")
 @click.option("--privacy", default="private",
@@ -237,6 +256,8 @@ def main(
     upload: bool,
     bucket: Optional[str],
     project_dir: Optional[str],
+    flow_staged: bool,
+    flow_import_dir: Optional[str],
     youtube: bool,
     privacy: str,
     verbose: bool,
@@ -254,6 +275,8 @@ def main(
             upload=upload,
             bucket=bucket,
             project_dir=project_dir,
+            flow_staged=flow_staged,
+            flow_import_dir=flow_import_dir,
         )
 
         if youtube:
