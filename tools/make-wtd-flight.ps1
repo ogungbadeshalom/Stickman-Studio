@@ -40,7 +40,8 @@ if (-not $SkipSshCheck) {
 Write-Host "[1] VPS: generating storyboard + scene prompts..."
 ssh $VPS "cd $VG && mkdir -p $SLUG && exit 0" 2>&1 | Out-Null
 # run orchestrator in flow-staged so it writes flow_prompts.txt (no image gen yet)
-ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; SCRIPT_WORDS='$Env:SCRIPT_WORDS' python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects" 2>&1 | Select-Object -Last 20
+$PY = "/usr/local/lib/hermes-agent/venv/bin/python3"
+ssh $VPS "cd $VG && SCRIPT_WORDS='$Env:SCRIPT_WORDS' $PY orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects" 2>&1 | Select-Object -Last 20
 
 # copy flow_prompts.txt down
 Write-Host "[2] pulling scene prompts to T470..."
@@ -61,7 +62,7 @@ scp -r "$LOCAL\flow_out\*" "$VPS`:$VG/projects/$SLUG/flow_out/"
 # ------ Step 4: finish on VPS (import images, TTS, assembly) ------
 Write-Host "[5] VPS: assembling final video..."
 $ytFlag = if ($Youtube) { " --youtube --privacy $Privacy" } else { "" }
-ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; SCRIPT_WORDS='$Env:SCRIPT_WORDS' python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects $ytFlag" 2>&1 | Select-Object -Last 25
+ssh $VPS "cd $VG && SCRIPT_WORDS='$Env:SCRIPT_WORDS' $PY orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects $ytFlag" 2>&1 | Select-Object -Last 25
 
 Write-Host ""
 Write-Host "=== Done: $Topic ==="  -ForegroundColor Green
