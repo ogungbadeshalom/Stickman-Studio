@@ -52,7 +52,42 @@ class TTSEngine:
             except Exception as exc:
                 log.warning("Piper failed (%s); falling back to Edge", str(exc)[:80])
                 return self._synthesize_edge(text, output_path)
+        if backend == "kokoro":
+            try:
+                return self._synthesize_kokoro(text, output_path)
+            except Exception as exc:
+                log.warning("Kokoro failed (%s); falling back to Edge", str(exc)[:80])
+                return self._synthesize_edge(text, output_path)
         return self._synthesize_edge(text, output_path)
+
+    def _synthesize_kokoro(self, text: str, output_path: str | Path) -> Path:
+        """Local Kokoro neural TTS (voice am_adam) via isolated venv wrapper.
+
+        Kokoro lives in /root/tts-chatterbox venv (CPU torch, avoids nvidia on
+        the shared venv). This method shells out to the wrapper and produces an
+        MP3. Free, local, and a clear upgrade in naturalness over Piper.
+        """
+        import tempfile, subprocess as _sp
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        voice = os.getenv("KOKORO_VOICE", "am_adam")
+        wrapper = os.getenv("KOKORO_WRAPPER", "/root/flow_sync/kokoro_synth.py")
+        kv = os.getenv("KOKORO_VENV", "/root/tts-chatterbox/bin/python")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
+            fh.write(text)
+            tpath = fh.name
+        try:
+            r = _sp.run([kv, wrapper, voice, tpath, str(output)],
+                        capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr[-300:])
+        finally:
+            try: os.remove(tpath)
+            except Exception: pass
+        log.info("TTS (kokoro %s): %s <- %s bytes", voice, output.name, output.stat().st_size)
+        return output
 
     def _synthesize_piper(self, text: str, output_path: str | Path) -> Path:
         """Local Piper ONNX TTS -> proper MP3 (free, offline, reliable)."""
