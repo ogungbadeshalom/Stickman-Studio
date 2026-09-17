@@ -16,12 +16,15 @@ param(
     [int]$Scenes = 5,
     [switch]$Youtube,
     [string]$Privacy = "private",
-    [switch]$SkipSshCheck
+    [switch]$SkipSshCheck,
+    [switch]$Short
 )
 
 $ErrorActionPreference = "Stop"
 $VPS = "root@167.233.41.251"
 $VG  = "/root/ShortGPT/flow_pipeline"          # VPS working dir
+# -Short = under 1 minute: ~2 scenes, ~35-word script (~15-20s narration)
+if ($Short) { $Scenes = 2; $Env:SCRIPT_WORDS = "35" } else { $Env:SCRIPT_WORDS = "500" }
 $SLUG = ($Topic -replace '[^A-Za-z0-9]+','_').Trim('_').ToLower()
 $LOCAL = "$env:USERPROFILE\flow_pipeline_$SLUG"
 New-Item -ItemType Directory -Force -Path $LOCAL | Out-Null
@@ -37,7 +40,7 @@ if (-not $SkipSshCheck) {
 Write-Host "[1] VPS: generating storyboard + scene prompts..."
 ssh $VPS "cd $VG && mkdir -p $SLUG && exit 0" 2>&1 | Out-Null
 # run orchestrator in flow-staged so it writes flow_prompts.txt (no image gen yet)
-ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects" 2>&1 | Select-Object -Last 20
+ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; SCRIPT_WORDS='$Env:SCRIPT_WORDS' python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects" 2>&1 | Select-Object -Last 20
 
 # copy flow_prompts.txt down
 Write-Host "[2] pulling scene prompts to T470..."
@@ -58,7 +61,7 @@ scp -r "$LOCAL\flow_out\*" "$VPS`:$VG/projects/$SLUG/flow_out/"
 # ------ Step 4: finish on VPS (import images, TTS, assembly) ------
 Write-Host "[5] VPS: assembling final video..."
 $ytFlag = if ($Youtube) { " --youtube --privacy $Privacy" } else { "" }
-ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects $ytFlag" 2>&1 | Select-Object -Last 25
+ssh $VPS "cd $VG && source .venv/bin/activate 2>/dev/null; SCRIPT_WORDS='$Env:SCRIPT_WORDS' python orchestrator.py '$Topic' --flow-staged --scenes $Scenes --project-dir projects $ytFlag" 2>&1 | Select-Object -Last 25
 
 Write-Host ""
 Write-Host "=== Done: $Topic ==="  -ForegroundColor Green

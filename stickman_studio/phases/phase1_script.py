@@ -74,7 +74,7 @@ def _build_prompt(topic: str, scene_count: int) -> str:
     return f"""TOPIC: "{topic}"
 
 Produce:
-1. A ~500-word narration SCRIPT, engaging and clear.
+1. A ~{os.getenv('SCRIPT_WORDS', '500')}-word narration SCRIPT, engaging and clear.
 2. A CHARACTER REFERENCE PROMPT for the stickman.
 3. Exactly {scene_count} SCENES.
 
