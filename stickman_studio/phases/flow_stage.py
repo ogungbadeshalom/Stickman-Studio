@@ -23,27 +23,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ..models import StoryBoard
+from zenn_style import full_image_prompt
 
 log = logging.getLogger("stickman_studio.flow_stage")
-
-_STYLE_SUFFIX = (
-    "minimalist black line art stickman, simple round head, thin stick limbs, "
-    "plain white background, no shading, no color, clean vector style."
-)
 
 
 def run(board: StoryBoard, project_dir: Path) -> StoryBoard:
     """Write flow_prompts.txt from the storyboard scenes.
 
+    Every prompt carries the ZENN character + style lock so the Google Flow
+    scenes keep the exact same stickman across the whole video.
+
     Returns the board unchanged (images are added when the T470 batch
     results are copied back). Callers should then import the generated
     files via `import_flow_images`.
     """
-    char_prompt = board.character_reference_prompt.strip()
     lines = []
     for s in board.scenes:
         action = (s.scene_prompt or s.narration or "").strip()
-        prompt = f"{char_prompt} {action} {_STYLE_SUFFIX}".strip()
+        prompt = full_image_prompt(action)
         lines.append(prompt)
     out = project_dir / "flow_prompts.txt"
     out.write_text("\n".join(lines), encoding="utf-8")

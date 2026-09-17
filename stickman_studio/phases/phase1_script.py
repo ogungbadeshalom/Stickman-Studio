@@ -149,9 +149,11 @@ def run(topic: str, project_dir: Path, scene_count: int | None = None) -> StoryB
         raise RuntimeError("Gemini returned zero scenes — cannot build video.")
 
     char_ref = data.get("character_reference_prompt") or (
-        "a minimalist black line art stickman figure: simple round head, "
-        "thin stick body and limbs, no color, no shading, no clothing, "
-        "plain white background."
+        "a minimalist stickman character with an oversized round head, two "
+        "solid black dot eyes, thin curved eyebrows, a tiny curved mouth, a few "
+        "short black hair strokes, slim elongated limbs; wearing a plain black "
+        "short-sleeve tee, medium-blue denim shorts, white low-top sneakers; "
+        "clean black line art, flat color, off-white background."
     )
 
     board = StoryBoard(
