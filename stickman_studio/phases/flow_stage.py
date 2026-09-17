@@ -41,10 +41,20 @@ def run(board: StoryBoard, project_dir: Path) -> StoryBoard:
     lines = []
     for s in board.scenes:
         action = (s.scene_prompt or s.narration or "").strip()
+        # Never emit a blank prompt — it would produce a duplicate/reused image.
+        if not action:
+            log.warning("scene %d has no prompt/narration; substituting title", s.index + 1)
+            action = (s.title or f"Scene {s.index + 1}")
         prompt = full_image_prompt(action)
+        # AUDIO-MATCH: append the narration verbatim so the generator can't drift
+        # the visual away from the spoken line.
+        narr = (s.narration or "").strip()
+        if narr:
+            prompt = f"{prompt} The scene shows exactly: \"{narr}\""
         lines.append(prompt)
     out = project_dir / "flow_prompts.txt"
-    out.write_text("\n".join(lines), encoding="utf-8")
+    # one prompt per line, trailing newline so line count == scene count
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     log.info("Flow stage: wrote %d prompts -> %s", len(lines), out)
     return board
 
