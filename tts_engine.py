@@ -13,7 +13,9 @@ from pathlib import Path
 
 log = logging.getLogger("stickman_studio.tts")
 
-_DEFAULT_VOICE = "en-US-JennyNeural"
+import os
+
+_DEFAULT_VOICE = os.getenv("TTS_VOICE", "en-US-ChristopherNeural")
 
 
 class TTSEngine:
