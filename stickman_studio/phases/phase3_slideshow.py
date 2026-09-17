@@ -84,12 +84,18 @@ def run(
 
         audio = audio_paths[i] if i < len(audio_paths) else None
         duration = _probe_duration(audio) if audio else 5.0
+        if not audio:
+            log.warning("scene %d has no audio track; using 5.0s default", scene.index)
         if duration <= 0:
+            log.warning("scene %d audio probe failed; using 5.0s default", scene.index)
             duration = 5.0
-        # RETENTION: never let a single static image linger. Cap clip length.
-        max_dur = float(os.getenv("MAX_SCENE_SEC", "4.5"))
+        # SYNC: hold the image exactly as long as its own narration plays so
+        # picture and audio stay in lock-step (cutting short desyncs viewer).
+        # Retention comes from SHORT narration beats in the storyboard, not from
+        # truncating an image mid-sentence. Cap is only a hard safety ceiling.
+        max_dur = float(os.getenv("MAX_SCENE_SEC", "8.0"))
         if duration > max_dur:
-            log.info("scene %d clip capped %.1fs -> %.1fs (retention)", scene.index, duration, max_dur)
+            log.info("scene %d clip capped %.1fs -> %.1fs (safety)", scene.index, duration, max_dur)
             duration = max_dur
 
         out_path = videos_dir / f"scene_{scene.index:02d}.mp4"

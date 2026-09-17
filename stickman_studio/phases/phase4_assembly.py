@@ -81,19 +81,27 @@ def _write_manifest(board: StoryBoard, project_dir: Path) -> Path:
 # Video concatenation
 # --------------------------------------------------------------------------- #
 
-def _concat_videos(board: StoryBoard, project_dir: Path) -> Path | None:
-    """Concatenate scene clips into a temp file (no audio yet)."""
+def _concat_videos(board: StoryBoard, project_dir: Path, audio_paths: list[Path] | None = None) -> tuple[Path | None, list[Path]]:
+    """Concatenate scene clips into a temp file (no audio yet).
+
+    Returns (raw_video_path, matched_audio_paths) where matched_audio_paths are
+    the audio tracks for exactly the clips that survived (so audio never shifts
+    relative to video when a scene is skipped).
+    """
     ffmpeg = _ffmpeg()
-    clips = [
-        s.video_path for s in board.scenes
-        if s.video_path and Path(s.video_path).is_file()
-    ]
+    clips: list[Path] = []
+    matched_audio: list[Path] = []
+    for i, s in enumerate(board.scenes):
+        if s.video_path and Path(s.video_path).is_file():
+            clips.append(Path(s.video_path))
+            if audio_paths is not None and i < len(audio_paths):
+                matched_audio.append(Path(audio_paths[i]))
     if not clips:
         log.warning("No video clips to assemble.")
-        return None
+        return None, []
     if not ffmpeg:
         log.warning("ffmpeg not found; skipping concatenation.")
-        return None
+        return None, []
 
     list_file = project_dir / "videos" / "_concat.txt"
     list_file.write_text(
@@ -106,8 +114,8 @@ def _concat_videos(board: StoryBoard, project_dir: Path) -> Path | None:
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         log.error("ffmpeg concat failed: %s", proc.stderr[-1000:])
-        return None
-    return raw
+        return None, []
+    return raw, matched_audio
 
 
 # --------------------------------------------------------------------------- #
@@ -214,12 +222,12 @@ def run(
         Summary dict with paths and counts.
     """
     _write_manifest(board, project_dir)
-    raw_video = _concat_videos(board, project_dir)
+    raw_video, matched_audio = _concat_videos(board, project_dir, audio_paths)
 
     final = None
-    if raw_video and audio_paths:
+    if raw_video and matched_audio:
         final_path = project_dir / "final.mp4"
-        result = _overlay_audio(raw_video, audio_paths, final_path)
+        result = _overlay_audio(raw_video, matched_audio, final_path)
         if result:
             final = result
         else:
