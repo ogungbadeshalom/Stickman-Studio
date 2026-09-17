@@ -79,7 +79,7 @@ class Settings:
 
         return Settings(
             credentials_path=creds,
-            gcp_project_id=_require("GCP_PROJECT_ID"),
+            gcp_project_id=os.getenv("GCP_PROJECT_ID", "").strip(),
             gcp_location=os.getenv("GCP_LOCATION", "us-central1").strip(),
             gcs_staging_bucket=os.getenv("GCS_STAGING_BUCKET", "").strip(),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip(),
@@ -109,10 +109,5 @@ settings = get_settings()
 
 @lru_cache(maxsize=1)
 def init_vertex() -> None:
-    """Initialize the Vertex AI SDK once for the whole process."""
-    import vertexai
-
-    vertexai.init(
-        project=settings.gcp_project_id,
-        location=settings.gcp_location,
-    )
+    """No-op in API-key mode (was Vertex AI init). Keep signature for compat."""
+    return

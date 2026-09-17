@@ -1,11 +1,13 @@
 """
-phase1_script.py  —  GEMINI
-===========================
-Takes a topic, asks Gemini 1.5 Pro for:
+phase1_script.py  —  GEMINI (via API key)
+==========================================
+Takes a topic, asks Gemini for:
   1. a ~500-word narration script, and
   2. a structured, scene-by-scene storyboard (character + scene prompts)
 returned as strict JSON.
 
+PATCHED: uses the standalone Gemini REST API via `google-genai` with a
+GEMINI_API_KEY instead of the Vertex AI service-account path.
 Output: a StoryBoard object, also persisted to projects/<slug>/storyboard.json
 """
 
@@ -13,17 +15,22 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
-from ..config import settings, init_vertex
+from dotenv import load_dotenv
+load_dotenv()
+
 from ..models import StoryBoard, Scene, slugify
 from ..retry import with_retry
 
 log = logging.getLogger("stickman_studio.phase1")
 
+API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+MODEL = os.getenv("STORYSB_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
 
-# The response schema forces Gemini to emit machine-parseable JSON.
-_RESPONSE_SCHEMA = {
+
+_RESONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "script": {"type": "string"},
@@ -43,7 +50,6 @@ _RESPONSE_SCHEMA = {
     },
     "required": ["script", "character_reference_prompt", "scenes"],
 }
-
 
 _SYSTEM_INSTRUCTION = """
 You are the Storyboard Architect for 'Stickman Studio', specializing in viral educational Shorts.
@@ -76,35 +82,56 @@ Each scene: title, scene_prompt, narration."""
 
 
 @with_retry
-def _generate(model, prompt: str):
-    """Single Gemini call wrapped with retry/backoff."""
-    from vertexai.generative_models import GenerationConfig
+def _generate(client, prompt: str):
+    """Single Gemini call wrapped with retry/backoff (google-genai SDK)."""
+    from google.genai import types
 
-    return model.generate_content(
-        prompt,
-        generation_config=GenerationConfig(
+    resp = client.models.generate_content(
+        model=MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
+            system_instruction=_SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
-            response_schema=_RESPONSE_SCHEMA,
         ),
     )
+    return resp.text
+
+
+def _extract_json(raw: str):
+    """Robustly pull a JSON object out of Gemini output (handles fences/prefix)."""
+    s = raw.strip()
+    if s.startswith("```"):
+        # strip ```json ... ``` fences
+        lines = s.splitlines()
+        if lines and lines[0].strip().lstrip("#").strip().lower().startswith("json"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    # find first { and last }
+    a = s.find("{")
+    b = s.rfind("}")
+    if a != -1 and b != -1 and b > a:
+        s = s[a:b+1]
+    return json.loads(s)
 
 
 def run(topic: str, project_dir: Path, scene_count: int | None = None) -> StoryBoard:
-    """Execute Phase 1 and return a populated StoryBoard."""
-    init_vertex()
-    from vertexai.generative_models import GenerativeModel
+    """Execute Phase 1 and return a populated StoryBoard (API-key backend)."""
+    if not API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set in the environment.")
 
-    scene_count = scene_count or settings.scene_count
-    log.info("Phase 1 (Gemini): generating script + %d scenes for '%s'", scene_count, topic)
+    from google import genai
+    client = genai.Client(api_key=API_KEY)
 
-    model = GenerativeModel(settings.gemini_model, system_instruction=_SYSTEM_INSTRUCTION)
-    response = _generate(model, _build_prompt(topic, scene_count))
+    scene_count = scene_count or int(os.getenv("SCENE_COUNT", "5"))
+    log.info("Phase 1 (Gemini %s): generating script + %d scenes for '%s'", MODEL, scene_count, topic)
 
-    raw = response.text
+    raw = _generate(client, _build_prompt(topic, scene_count))
     try:
-        data = json.loads(raw)
+        data = _extract_json(raw)
     except json.JSONDecodeError as e:
         log.error("Gemini returned non-JSON output; attempting salvage.")
         raise RuntimeError(f"Failed to parse Gemini JSON: {e}\n--- raw ---\n{raw[:2000]}")

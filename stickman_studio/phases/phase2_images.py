@@ -1,18 +1,16 @@
 """
-phase2_images.py  —  IMAGEN 3
-=============================
-Step A: generate the CHARACTER REFERENCE image from the canonical
-        character prompt (imagen-3.0-generate-*) and save it locally.
-Step B: for each scene, generate a scene image that is CONDITIONED on the
-        character reference (imagen-3.0-capability-* subject customization)
-        so the same stickman appears consistently across scenes.
+phase2_images.py  —  IMAGEN (via API key)
+==========================================
+Generates scene images with the standalone Gemini Images API (google-genai)
+using GEMINI_API_KEY. Rewritten so it does NOT require Vertex AI.
 
-If the capability model / subject-reference feature is unavailable in your
-project, set IMAGEN_USE_REFERENCE=0 and it falls back to prompt-only
-generation that re-states the character description in every scene.
+PATCHED: uses `genai.Client(api_key=...)` + `client.models.generate_images`
+instead of the Vertex service-account path. Subject-reference "capability"
+customization is Vertex-only, so we use prompt-only generation that
+re-states the character description in every scene (consistent enough for
+a minimalist black-line stickman).
 
-Output: PNG files in projects/<slug>/images/, with paths recorded on
-        each Scene in the StoryBoard.
+Output: PNG files in projects/<slug>/images/, paths recorded on scenes.
 """
 
 from __future__ import annotations
@@ -22,132 +20,129 @@ import os
 import traceback
 from pathlib import Path
 
-from ..config import settings, init_vertex
+from dotenv import load_dotenv
+load_dotenv()
+
 from ..models import StoryBoard
 from ..retry import with_retry
 
 log = logging.getLogger("stickman_studio.phase2")
 
+API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+IMAGEN_MODEL = os.getenv("IMAGEN_GENERATE_MODEL", "gemini-3.1-flash-image").strip()
+
 _NEGATIVE = "color, photorealistic, 3d render, shadows, gradients, text, watermark, clutter, realistic human, detailed illustration, astronaut, robot, animal, clothing, shading"
 
+_CHAR_CONSTRAINT = (
+    "Minimalist stickman: simple round head, black line art, thin stick body "
+    "and limbs, no color, no shading, no clothing, no details, plain white background."
+)
 
-# --------------------------------------------------------------------------- #
-# Step A — character reference
-# --------------------------------------------------------------------------- #
+
+def _client():
+    from google import genai
+    return genai.Client(api_key=API_KEY)
+
+
 @with_retry
-def _generate_reference(prompt: str):
-    from vertexai.preview.vision_models import ImageGenerationModel
+def _generate_image(prompt: str, aspect_ratio: str = "16:9"):
+    """Single image via Gemini image model using the plain API key.
 
-    model = ImageGenerationModel.from_pretrained(settings.imagen_generate_model)
-    return model.generate_images(
-        prompt=prompt,
-        number_of_images=1,
-        aspect_ratio="16:9",
-        negative_prompt=_NEGATIVE,
-        add_watermark=False,
-        safety_filter_level="block_some",
-        person_generation="allow_adult",
+    Uses generate_content with an image-output model (works in Developer mode)
+    instead of Vertex-only generate_images.
+    """
+    from google.genai import types
+    client = _client()
+
+    resp = client.models.generate_content(
+        model=IMAGEN_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+        ),
     )
+    data = None
+    cand = resp.candidates[0] if resp.candidates else None
+    if cand:
+        for part in cand.content.parts:
+            if getattr(part, "inline_data", None) is not None and part.inline_data.data:
+                data = part.inline_data.data
+                break
+    if not data:
+        raise RuntimeError("Imagen returned no image bytes (API-key backend).")
+    return data
+
+
+def _save(img, path: Path):
+    """Save raw image bytes to disk."""
+    data = img if isinstance(img, (bytes, bytearray)) else _deref_bytes(img)
+    if not data:
+        raise RuntimeError("Generated image had no bytes to save.")
+    path.write_bytes(data)
+
+
+def _deref_bytes(img):
+    """Extract bytes from an image object-ish fallback."""
+    for attr in ("image_bytes",):
+        v = getattr(img, attr, None)
+        if v:
+            return v
+    if getattr(img, "image", None) is not None:
+        return img.image.image_bytes
+    return None
+
+
+def _character_prompt() -> str:
+    return ("A minimalist stickman figure: simple round head, thin stick body "
+            "and limbs, clean black line art, no color, no shading, plain white "
+            "background, vector style, lots of negative space.")
+
+
+def _generate_scene_prompt_only(ref_prompt: str, scene_prompt: str):
+    full_prompt = (
+        f"STICKMAN: {ref_prompt} {_CHAR_CONSTRAINT}. "
+        f"ACTION: The stickman {scene_prompt}. "
+        "Clean black line art, simple, no color, plain white background, "
+        "vector style, lots of negative space, no shading, no gradients, no text."
+    )
+    return _generate_image(full_prompt, aspect_ratio="16:9")
 
 
 def _make_reference(board: StoryBoard, images_dir: Path) -> Path:
-    log.info("Phase 2A (Imagen 3): generating character reference image")
+    log.info("Phase 2A (Imagen): generating character reference image")
     prompt = (
-        f"{board.character_reference_prompt}. "
-        "Full body, centered, T-pose-like neutral stance, "
-        "minimalist stickman, clean black line art on plain white background, "
-        "simple, no color, vector style, lots of negative space."
+        f"{board.character_reference_prompt}. {_CHAR_CONSTRAINT}. "
+        "Full body, centered, neutral stance, minimalist stickman, "
+        "clean black line art on plain white background, lots of negative space."
     )
-    images = _generate_reference(prompt)
+    img = _generate_image(prompt, aspect_ratio="16:9")
     ref_path = images_dir / "character_reference.png"
-    images[0].save(location=str(ref_path), include_generation_parameters=False)
+    _save(img, ref_path)
     log.info("Character reference saved -> %s", ref_path)
     return ref_path
 
 
-# --------------------------------------------------------------------------- #
-# Step B — scene images conditioned on the reference
-# --------------------------------------------------------------------------- #
-@with_retry
-def _generate_scene_with_reference(scene_prompt: str, ref_path: Path):
-    """Use Imagen 3 subject customization with the character reference."""
-    from vertexai.preview.vision_models import (
-        ImageGenerationModel,
-        Image,
-        SubjectReferenceImage,
-    )
-
-    model = ImageGenerationModel.from_pretrained(settings.imagen_capability_model)
-    ref = SubjectReferenceImage(
-        reference_id=1,
-        image=Image.load_from_file(str(ref_path)),
-        subject_description=(
-            "a minimalist black line art stickman figure with a simple round head, "
-            "thin stick body and limbs, no color, no shading, no clothing, no details"
-        ),
-        subject_type="SUBJECT_TYPE_PERSON",
-    )
-    full_prompt = (
-        f"ACTION: The stickman figure {scene_prompt}."
-        f" CONSTRAINTS: clean black line art, simple, no color, plain white background, "
-        f"vector style, lots of negative space, no shading, no gradients."
-    )
-    return model.edit_image(
-        prompt=full_prompt,
-        number_of_images=1,
-        reference_images=[ref],
-        negative_prompt=_NEGATIVE,
-    )
-
-
-@with_retry
-def _generate_scene_prompt_only(ref_prompt: str, scene_prompt: str):
-    """Fallback: no reference image, restate character each time."""
-    from vertexai.preview.vision_models import ImageGenerationModel
-
-    model = ImageGenerationModel.from_pretrained(settings.imagen_generate_model)
-    full_prompt = (
-        f"{ref_prompt}. {scene_prompt}. "
-        "Minimalist stickman, clean black line art on plain white background, "
-        "simple, no color, vector style, lots of negative space."
-    )
-    return model.generate_images(
-        prompt=full_prompt,
-        number_of_images=1,
-        aspect_ratio="16:9",
-        negative_prompt=_NEGATIVE,
-        add_watermark=False,
-    )
-
-
 def run(board: StoryBoard, project_dir: Path) -> StoryBoard:
-    init_vertex()
+    if not API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set in the environment.")
+
     images_dir = project_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
-    ref_path = _make_reference(board, images_dir)
-    use_reference = os.getenv("IMAGEN_USE_REFERENCE", "1").strip() != "0"
+    ref_prompt = board.character_reference_prompt
+    _make_reference(board, images_dir)
 
     for scene in board.scenes:
-        log.info("Phase 2B: scene %d/%d — %s",
-                 scene.index + 1, len(board.scenes), scene.title)
+        log.info("Phase 2B: scene %d/%d — %s", scene.index + 1, len(board.scenes), scene.title)
         try:
-            if use_reference:
-                images = _generate_scene_with_reference(scene.scene_prompt, ref_path)
-            else:
-                images = _generate_scene_prompt_only(
-                    board.character_reference_prompt, scene.scene_prompt
-                )
+            img = _generate_scene_prompt_only(ref_prompt, scene.scene_prompt)
         except Exception:
-            log.warning("Reference-based generation failed for scene %d. "
-                        "Falling back to prompt-only.\n%s",
+            log.warning("Scene %d generation failed; retrying once.\n%s",
                         scene.index, traceback.format_exc())
-            images = _generate_scene_prompt_only(
-                board.character_reference_prompt, scene.scene_prompt
-            )
+            img = _generate_scene_prompt_only(ref_prompt, scene.scene_prompt)
 
         img_path = images_dir / f"scene_{scene.index:02d}.png"
-        images[0].save(location=str(img_path), include_generation_parameters=False)
+        _save(img, img_path)
         scene.image_path = str(img_path)
         log.info("  saved -> %s", img_path)
 
