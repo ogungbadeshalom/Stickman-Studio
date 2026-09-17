@@ -22,7 +22,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $VPS = "root@167.233.41.251"
-$VG  = "/root/ShortGPT/flow_pipeline"          # VPS working dir
+$VG  = "/root/stickman-fork"          # VPS working dir = YOUR fork (has .env + deps)
 # -Short = under 1 minute: ~2 scenes, ~35-word script (~15-20s narration)
 if ($Short) { $Scenes = 2; $Env:SCRIPT_WORDS = "35" } else { $Env:SCRIPT_WORDS = "500" }
 $SLUG = ($Topic -replace '[^A-Za-z0-9]+','_').Trim('_').ToLower()

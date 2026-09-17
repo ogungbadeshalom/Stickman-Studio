@@ -140,17 +140,25 @@ def run(topic: str, project_dir: Path, scene_count: int | None = None) -> StoryB
         Scene(
             index=i,
             title=s.get("title", f"Scene {i + 1}"),
-            scene_prompt=s["scene_prompt"],
+            scene_prompt=s.get("scene_prompt", s.get("narration", "")),
             narration=s.get("narration", ""),
         )
-        for i, s in enumerate(data["scenes"])
+        for i, s in enumerate(data.get("scenes", []) or [])
     ]
+    if not scenes:
+        raise RuntimeError("Gemini returned zero scenes — cannot build video.")
+
+    char_ref = data.get("character_reference_prompt") or (
+        "a minimalist black line art stickman figure: simple round head, "
+        "thin stick body and limbs, no color, no shading, no clothing, "
+        "plain white background."
+    )
 
     board = StoryBoard(
         topic=topic,
         slug=slugify(topic),
-        script=data["script"],
-        character_reference_prompt=data["character_reference_prompt"],
+        script=data.get("script", ""),
+        character_reference_prompt=char_ref,
         scenes=scenes,
     )
 
