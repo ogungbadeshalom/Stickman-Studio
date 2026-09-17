@@ -92,29 +92,50 @@ def generate_ideas(direction: str, n: int = 10, use_llm: bool = True):
 
 
 def _template_ideas(direction: str, n: int):
-    topics = {
-        "finance": [("compounding", "save", "compound interest", "wealth", "money"),
-                    ("surviving paycheck to paycheck", "overspend", "spending", "finances", "money")],
-        "self-improvement": [("procrastinating", "delay", "procrastination", "goals", "focus"),
-                             ("you're not lazy", "quit", "motivation", "life", "discipline")],
-    }.get(direction, [("it", "overthink", "overthinking", "life", "results")])
-    base_t, verb, topic, domain, outcome = topics[0]
+    pools = [
+        ("why you keep {topic}", "you keep {verb} even though you know better",
+         "the invisible habit quietly sabotaging your results",
+         "self-recognition", "a mechanism, not weakness"),
+        ("you're not lazy, you're {sab}", "you quit before the friction starts",
+         "what the resistance actually is", "contradiction", "reframing self-blame"),
+        ("the {cost} mistake ruining your {domain}", "a small daily choice compounds into a big cost",
+         "the expensive error hiding in plain sight", "loss-aversion", "a costly trap avoided"),
+        ("nobody tells you this about {topic}", "an unspoken truth that changes your decision",
+         "what everyone gets wrong", "mystery", "a counterintuitive truth"),
+        ("the psychology behind {topic}", "the mental mechanism runs you without you noticing",
+         "the hidden driver", "curiosity", "seeing the mechanism"),
+        ("what {topic} does to you over time", "the slow, invisible long-term effect",
+         "what really happens month by month", "surprise", "long-term clarity"),
+    ]
+    verbs = {"finance": ["overspend","save","invest"], "self-improvement": ["procrastinate","delay","avoid"]}
+    sab = {"finance": "overspending", "self-improvement": "procrastinating"}.get(direction, "stalling")
+    cost = {"finance": "small money", "self-improvement": "small effort"}.get(direction, "small")
+    topic = {"finance": "compound interest", "self-improvement": "procrastination"}.get(direction, "your habits")
+    domain = {"finance": "wealth", "self-improvement": "potential"}.get(direction, "life")
+    v = verbs.get(direction, ["miss"])
     ideas = []
-    for i in range(n):
-        sf = TITLE_FORMULAS[i % len(TITLE_FORMULAS)]
-        title = (sf.format(verb=verb, bad_habit="procrastinating", stake="Small",
-                           domain=domain, topic=topic, glorified_thing="the grind",
-                           outcome=outcome) if "{" not in sf else
-                 f"The Hidden Rule of {topic.title()} No One Follows")
+    seen = set()
+    i = 0
+    while len(ideas) < n:
+        pool = pools[i % len(pools)]
+        title_tmpl, prob_tmpl, hook, trig, angle = pool
+        title = title_tmpl.format(topic=topic, sab=sab, cost=cost, domain=domain)
+        if title in seen:
+            # vary the topic rendering to force uniqueness
+            title = title_tmpl.format(
+                topic=f"{topic} ({'the quiet side' if len(seen)%2 else 'the real driver'})",
+                sab=sab, cost=cost, domain=domain)
+        seen.add(title)
         ideas.append({
             "title": title,
-            "core_problem": f"You keep {verb} even though it costs you {domain}.",
-            "hook": "What small, invisible habit is quietly sabotaging your results?",
-            "trigger": "self-recognition",
-            "unique_angle": f"A stickman explainer showing the real mechanism behind {topic}.",
-            "transformation": f"Understand the {topic} trap and gain a practical escape",
+            "core_problem": prob_tmpl.format(verb=v[len(seen) % len(v)], topic=topic),
+            "hook": hook,
+            "trigger": trig,
+            "unique_angle": f"A minimalist stickman explainer exposing {angle}.",
+            "transformation": "Recognize the real mechanism and gain a practical escape",
         })
-    return ideas
+        i += 1
+    return ideas[:n]
 
 
 if __name__ == "__main__":
