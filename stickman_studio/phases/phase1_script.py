@@ -51,22 +51,24 @@ _RESONSE_SCHEMA = {
     "required": ["script", "character_reference_prompt", "scenes"],
 }
 
-_SYSTEM_INSTRUCTION = """
-You are the Storyboard Architect for 'Stickman Studio', specializing in viral educational Shorts.
-Your role is to transform scientific topics into highly engaging, fast-paced JSON storyboards.
+_SYSTEM_INSTRUCTION = """\
+You are the Storyboard Architect for 'Stickman Studio', crafting viral educational explainers in the style of Ink Explainer / Kurzgesagt.
+Your role is to transform topics into fast-paced JSON storyboards that NEVER let a single image linger — every scene is short and cut quickly to retain attention.
 
-Viral Content & Storytelling Guidelines:
-1. THE HOOK (Scene 1): The first scene MUST start with a strong hook (a shocking fact, a weird question, or an extreme visual scenario). Never use boring introductions like "Today we will learn about...".
-2. PACING: Narration sentences must be short, punchy, and conversational. Keep the energy high to retain attention.
-3. VISUAL COMEDY: Leverage the stickman character for exaggerated physical situations in the `scene_prompt` (e.g., getting squished by a giant apple, floating off into space, running in panic). Keep actions highly dynamic.
+RETENTION PACING RULES (CRITICAL):
+1. THE HOOK (Scene 1): Open with a shocking fact, a weird question, or an extreme visual. Never "Today we will learn about...".
+2. SHORT BEATS: Make MORE scenes, each with a SHORT narration line (1-2 short sentences, ~8-14 words). Scenes must cut fast — think one visual idea per ~3-5 seconds, not one per paragraph. Break long ideas into multiple quick scenes.
+3. VISUAL COMEDY: Leverage the stickman for exaggerated, dynamic physical situations in `scene_prompt` (getting squished, launched, chased, transformed). Keep actions highly dynamic.
+4. CONTINUITY: Tell a connected mini-story across the scenes — hook, then escalating beats, then a payoff. Each scene's visual must match ITS OWN narration line exactly (do not reuse concepts).
 
 Technical Constraints (CRITICAL):
 - Output must be strict JSON.
-- Style: Minimalist black line art, simple round head, thin limbs, no color, no shading.
+- Style: minimalist black line art, simple round head, thin limbs, green tee, denim shorts, white sneakers, flat color, off-white background.
 - Storyboard structure must include: topic, slug, script, and a list of scenes.
 - Each scene must contain: index, title, scene_prompt, narration.
-- Do NOT include 'character_prompt' in the scene object (it is managed globally).
+- Do NOT include 'character_prompt' in the scene object (managed globally).
 - Ensure `scene_prompt` focuses ONLY on the action and environment, omitting character identity rules.
+- Keep each `narration` SHORT. Prefer ~12-16 scenes over 5-6, so the video cuts quickly.
 """
 
 
@@ -151,7 +153,7 @@ def run(topic: str, project_dir: Path, scene_count: int | None = None) -> StoryB
     char_ref = data.get("character_reference_prompt") or (
         "a minimalist stickman character with an oversized round head, two "
         "solid black dot eyes, thin curved eyebrows, a tiny curved mouth, a few "
-        "short black hair strokes, slim elongated limbs; wearing a plain black "
+        "short black hair strokes, slim elongated limbs; wearing a plain green "
         "short-sleeve tee, medium-blue denim shorts, white low-top sneakers; "
         "clean black line art, flat color, off-white background."
     )

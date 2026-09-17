@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -36,27 +37,29 @@ def _probe_duration(audio_path: Path) -> float:
 
 
 def _ken_burns_clip(image_path: Path, duration: float, output_path: Path) -> Path:
+    # STATIC clip (no zoompan) — per user: stop the zooming effect. The image
+    # is scaled to fill 1920x1080 and held still for the clip duration.
+    # Quick scene cuts (short per-scene duration) carry the retention, not zoom.
     ffmpeg = _ffmpeg()
     fps = 24
-    nframes = max(1, int(duration * fps))
-    zoom_inc = 0.1 / nframes
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    expr = f"z='min(if(eq(on,1),1,zoom+{zoom_inc}),1.1)':d={nframes}:s=1280x720:fps={fps}"
     cmd = [
         ffmpeg, "-y",
         "-loop", "1",
         "-i", str(image_path),
-        "-vf", f"scale=1280:720,setsar=1,zoompan={expr}",
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+               "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=white,"
+               "setsar=1,fps=24",
         "-c:v", "libx264",
         "-t", str(duration),
         "-pix_fmt", "yuv420p",
         str(output_path),
     ]
-    log.debug("Ken Burns: %s", " ".join(cmd[:6]) + " ...")
+    log.debug("Static clip: %s", " ".join(cmd[:6]) + " ...")
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"Ken Burns clip failed: {proc.stderr[-500:]}")
+        raise RuntimeError(f"clip failed: {proc.stderr[-500:]}")
     return output_path
 
 
@@ -83,6 +86,11 @@ def run(
         duration = _probe_duration(audio) if audio else 5.0
         if duration <= 0:
             duration = 5.0
+        # RETENTION: never let a single static image linger. Cap clip length.
+        max_dur = float(os.getenv("MAX_SCENE_SEC", "4.5"))
+        if duration > max_dur:
+            log.info("scene %d clip capped %.1fs -> %.1fs (retention)", scene.index, duration, max_dur)
+            duration = max_dur
 
         out_path = videos_dir / f"scene_{scene.index:02d}.mp4"
         log.info("Slideshow scene %d/%d — %s (%.1fs, Ken Burns zoom)",

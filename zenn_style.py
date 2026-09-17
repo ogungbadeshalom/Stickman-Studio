@@ -13,7 +13,7 @@ Character (fixed across all scenes):
   torso, long thin limbs), relaxed understated body language.
 
 Clothing (default; change only when the script requires it):
-  oversized plain black short-sleeve tee, loose medium-blue denim shorts
+  oversized plain green short-sleeve tee, loose medium-blue denim shorts
   ending above the knee with front pockets + rolled cuffs, plain white
   low-top sneakers, clean black outline around every shape.
 
@@ -22,7 +22,7 @@ Line art: clean black hand-drawn-style outline art, smooth slightly-organic
   NO photorealism/painterly/3D/cross-hatching.
 
 Color: restrained palette; off-white/light warm-white background, black
-  outline, black/charcoal tee, muted medium-blue denim, white sneakers,
+  outline, green tee, muted medium-blue denim, white sneakers,
   very light gray contact shadow. No neon/gloss/strong saturation.
 
 Mood: understated, observational, relatable, slightly deadpan. Emotions
@@ -35,7 +35,7 @@ CHARACTER_LOCK = (
     "simple curved mouth, no nose or ears, no skin texture, a few short black "
     "hair strokes sticking up from the top, a narrow cylindrical neck, slim "
     "elongated arms and legs, simplified hands and feet. He wears an oversized "
-    "plain black short-sleeve t-shirt, loose medium-blue denim shorts ending "
+    "plain green short-sleeve t-shirt, loose medium-blue denim shorts ending "
     "above the knee with simple front pockets and rolled cuffs, and plain "
     "white low-top sneakers, every clothing shape outlined in clean black."
 )
@@ -44,7 +44,7 @@ STYLE_LOCK = (
     "Clean black hand-drawn-style line art, consistent medium-weight outlines, "
     "simple interior lines, flat color fills, very light gray contact shadow "
     "beneath the character. Minimalist 2D cartoon illustration, restrained "
-    "palette of off-white background, black, charcoal, muted medium blue, and "
+    "palette of off-white background, black, green, muted medium blue, and "
     "white. No photorealism, no 3D, no anime, no painterly shading, no neon, "
     "no glossy surfaces, no dramatic lighting. Simple eye-level perspective, "
     "generous negative space, protagonist visually dominant, understated "

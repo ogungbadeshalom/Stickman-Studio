@@ -86,26 +86,46 @@ while IFS= read -r p; do
   [ -z "$p" ] && continue
   case "$p" in \#*) continue;; esac
   n=$((n+1))
-  echo "  scene $n: generating..."
-  uv run gflow image t2i "$p" --model nano2 --aspect 9:16 --project "$PROJ" \
-      --out "$DEST" >/tmp/zenn_flow_scene_$n.log 2>&1 || echo "  scene $n FAILED (see log)"
-  # throttle to respect the daily image cap + anti-bot courtesy
+  ok=0
+  # RETRY: Flow sometimes hiccups (WireFormatError / transient) — retry a
+  # failed scene up to 3x with growing backoff before giving up.
+  for try in 1 2 3; do
+    echo "  scene $n: generating... (try $try)"
+    if uv run gflow image t2i "$p" --model nano2 --aspect 16:9 --project "$PROJ" \
+        --out "$DEST" >/tmp/zenn_flow_scene_${n}_try${try}.log 2>&1; then
+      ok=1; break
+    fi
+    [ "$try" -lt 3 ] && echo "  scene $n try $try failed — backing off $((try*8))s" && sleep $((try*8))
+  done
+  [ "$ok" = "1" ] || echo "  scene $n FAILED after 3 tries (see log)"
   sleep 3
 done < "$PROMPTS"
 echo "loop done ($n prompts)"
 
-echo "=== [5/6] mapping generated Flow images to scene files ==="
-# gflow names outputs <uuid>_N.jpg; we need scene_001..scene_NN as orchestrator expects
+echo "=== [5/6] mapping generated Flow images to scene files (strict 1:1, no reuse) ==="
+# gflow names outputs <uuid>_N.jpg; map in order to scene_NNN, and FAIL if
+# the number of generated images != number of scene prompts (prevents reuse).
 "$PY3" - <<PYEOF
-import glob, os, re, shutil
+import glob, os, re, shutil, sys
 dest="$DEST"
+n_prompts = 0
+with open("$PROMPTS", encoding="utf-8") as fh:
+    for ln in fh:
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            n_prompts += 1
 files = sorted(glob.glob(os.path.join(dest, "*.jp*")))
-# gflow may output M images; map in order to scene_NNN.jpg
+# forward-compatible: if a scene_NNN already exists, clear them
+for s in glob.glob(os.path.join(dest, "scene_*.jpg")):
+    os.remove(s)
+if len(files) != n_prompts:
+    print(f"ERROR: {len(files)} images for {n_prompts} prompts — reuse/missing detected, aborting.")
+    sys.exit(1)
 for i, f in enumerate(files, 1):
     scene = os.path.join(dest, f"scene_{i:03d}.jpg")
     shutil.copy(f, scene)
     print("scene", i, "->", os.path.basename(scene))
-print("mapped", len(files), "images")
+print("mapped", len(files), "unique images for", n_prompts, "scenes (OK)")
 PYEOF
 
 echo "=== [6/6] assembling vertical video (narration + Ken Burns) ==="
