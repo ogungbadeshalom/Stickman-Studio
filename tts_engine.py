@@ -58,7 +58,45 @@ class TTSEngine:
             except Exception as exc:
                 log.warning("Kokoro failed (%s); falling back to Edge", str(exc)[:80])
                 return self._synthesize_edge(text, output_path)
+        if backend == "cosyvoice3":
+            try:
+                return self._synthesize_cosyvoice3(text, output_path)
+            except Exception as exc:
+                log.warning("CosyVoice3 failed (%s); falling back to Edge", str(exc)[:80])
+                return self._synthesize_edge(text, output_path)
         return self._synthesize_edge(text, output_path)
+
+    def _synthesize_cosyvoice3(self, text: str, output_path: str | Path) -> Path:
+        """Local CosyVoice3 GGUF TTS via CrispASR CLI (free, local, neural)."""
+        import subprocess as _sp
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        wav_out = output.with_suffix(".wav")
+
+        crispasr = os.getenv("CRISPASR", "/root/CrispASR/build/bin/crispasr")
+        model = os.getenv("CRISPASR_MODEL",
+                          "/root/cosyvoice3_models/cosyvoice3-llm-q4_k.gguf")
+        voice = os.getenv("COSYVOICE3_VOICE", "fleurs-en")
+
+        cmd = [crispasr, "--backend", "cosyvoice3-tts", "-m", model,
+               "--voice", voice, "--i-have-rights",
+               "--no-c2pa", "--no-spoken-disclaimer",
+               "--accept-marking-responsibility",
+               "--tts", text, "--tts-output", str(wav_out)]
+        r = _sp.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr[-300:] or r.stdout[-300:])
+        if not wav_out.exists():
+            raise RuntimeError("CosyVoice3 produced no output wav")
+
+        # WAV -> MP3 (the fork expects mp3 files)
+        _sp.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_out),
+                 "-c:a", "libmp3lame", "-q:a", "4", str(output)], check=False)
+        if wav_out.exists() and wav_out != output:
+            wav_out.unlink(missing_ok=True)
+        log.info("TTS (cosyvoice3 %s): %s <- %s bytes", voice, output.name, output.stat().st_size)
+        return output
 
     def _synthesize_kokoro(self, text: str, output_path: str | Path) -> Path:
         """Local Kokoro neural TTS (voice am_adam) via isolated venv wrapper.
