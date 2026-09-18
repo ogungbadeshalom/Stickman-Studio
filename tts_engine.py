@@ -64,7 +64,44 @@ class TTSEngine:
             except Exception as exc:
                 log.warning("CosyVoice3 failed (%s); falling back to Edge", str(exc)[:80])
                 return self._synthesize_edge(text, output_path)
+        if backend == "kitten":
+            try:
+                return self._synthesize_kitten(text, output_path)
+            except Exception as exc:
+                log.warning("KittenTTS failed (%s); falling back to Edge", str(exc)[:80])
+                return self._synthesize_edge(text, output_path)
         return self._synthesize_edge(text, output_path)
+
+    def _synthesize_kitten(self, text: str, output_path: str | Path) -> Path:
+        """KittenTTS (ONNX, CPU-fast, 24kHz) via shared venv. Voice: Hugo."""
+        import tempfile, subprocess as _sp
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        wav_out = output.with_suffix(".wav")
+        voice = os.getenv("KITTEN_VOICE", "Hugo")
+        wrapper = os.getenv("KITTEN_WRAPPER", "/root/flow_sync/kitten_synth.py")
+        py = os.getenv("KITTEN_PY", "/usr/local/lib/hermes-agent/venv/bin/python3")
+
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as fh:
+            fh.write(text); tpath = fh.name
+        try:
+            r = _sp.run([py, wrapper, tpath, str(wav_out), voice],
+                        capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr[-300:])
+        finally:
+            try: os.remove(tpath)
+            except Exception: pass
+
+        # WAV -> MP3 (fork expects mp3)
+        _sp.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_out),
+                 "-c:a", "libmp3lame", "-q:a", "4", str(output)], check=False)
+        if wav_out.exists() and wav_out != output:
+            wav_out.unlink(missing_ok=True)
+        log.info("TTS (kitten %s): %s <- %s bytes", voice, output.name, output.stat().st_size)
+        return output
 
     def _synthesize_cosyvoice3(self, text: str, output_path: str | Path) -> Path:
         """Local CosyVoice3 GGUF TTS via CrispASR CLI (free, local, neural)."""
