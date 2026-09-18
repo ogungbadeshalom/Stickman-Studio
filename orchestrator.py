@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 import sys
 import time
+import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +49,7 @@ def run_pipeline(
     project_dir: Optional[str] = None,
     flow_staged: bool = False,
     flow_import_dir: Optional[str] = None,
+    qa: bool = False,
 ) -> dict:
     """Execute the full pipeline and return a summary dict.
 
@@ -95,11 +98,47 @@ def run_pipeline(
         flow_stage.run(board, out)
         # import T470-generated scenes if present
         imp_dir = Path(flow_import_dir) if flow_import_dir else (out / "flow_out")
+        has_images = False
         if imp_dir.is_dir():
             flow_stage.import_flow_images(board, out, imp_dir)
             log.info("  imported scenes from %s", imp_dir)
+            has_images = True
         else:
             log.info("  no flow_out/ yet — run the T470 batch tool, then re-run with --flow-staged")
+
+        # ---- QA: score each generated image against its narration ----
+        if qa and has_images:
+            from stickman_studio.phases import qa_images
+            log.info("-- QA: reviewing %d Flow images --", len(board.scenes))
+            ref = os.getenv("ZENN_REF_IMAGE")
+            report = qa_images.run(board, out, ref_image=ref)
+            for rnd in range(2):  # cap at 2 regen rounds
+                regen = out / "regen_prompts.txt"
+                if not regen.is_file():
+                    break
+                index_map = json.loads((out / "regen_index.json").read_text(encoding="utf-8"))
+                log.info("QA round %d: %d scene(s) need regen. T470 command:",
+                         rnd + 1, len(index_map))
+                cmd = (f"powershell -File .\\flow-batch-gen.ps1 regen_prompts.txt regen_out   "
+                       f"(upload regen_out/ back to {out}/regen_out/)")
+                print(cmd)
+                regen_out = out / "regen_out"
+                if regen_out.is_dir() and any(regen_out.iterdir()):
+                    import_ok = False
+                    try:
+                        flow_stage.import_flow_images(board, out, regen_out, index_map=index_map)
+                        import_ok = True
+                    except Exception as exc:  # noqa: BLE001
+                        log.error("QA regen import failed: %s", exc)
+                    if import_ok:
+                        regen.unlink(missing_ok=True)
+                        log.info("-- QA round %d: re-reviewing regenerated scenes --", rnd + 1)
+                        report = qa_images.run(board, out, ref_image=ref)
+                else:
+                    log.warning("No regen_out/ images yet — re-run orchestrator after uploading them.")
+                    break
+            qs = report.get("passed"), report.get("total")
+            print(f"QA summary: {qs[0]} / {qs[1]} scenes passed")
     else:
         all_images_cached = all(
             s.image_path and Path(s.image_path).is_file()
@@ -240,6 +279,8 @@ def run_pipeline(
                    "T470-generated scenes from projects/<slug>/flow_out (no VPS image API)")
 @click.option("--flow-import-dir", default=None,
               help="Dir containing T470-generated scene_001.jpg files (default: <project>/flow_out)")
+@click.option("--qa", is_flag=True, default=False,
+              help="Run image QA (Gemini vision) after Flow import; regenerate failing scenes (max 2 rounds)")
 @click.option("--youtube", "-yt", is_flag=True, default=False,
               help="Upload final video to YouTube after generation")
 @click.option("--privacy", default="private",
@@ -258,6 +299,7 @@ def main(
     project_dir: Optional[str],
     flow_staged: bool,
     flow_import_dir: Optional[str],
+    qa: bool,
     youtube: bool,
     privacy: str,
     verbose: bool,
@@ -277,6 +319,7 @@ def main(
             project_dir=project_dir,
             flow_staged=flow_staged,
             flow_import_dir=flow_import_dir,
+            qa=qa,
         )
 
         if youtube:
