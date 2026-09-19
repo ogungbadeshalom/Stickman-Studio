@@ -205,6 +205,8 @@ def _as_list(v) -> list[str]:
     return out
 
 
+_PROTAGONIST = "the stickman" if _ACTIVE_CHAR == "stickman" else "the character"
+
 def normalize_beat(b: dict | None) -> dict:
     """Clean an LLM beat: strings collapsed, shot snapped to SHOTS, text label <= 3 words."""
     b = b or {}
@@ -217,7 +219,7 @@ def normalize_beat(b: dict | None) -> dict:
     if isinstance(meta, str):
         meta = meta.strip().lower() in ("true", "yes", "1")
     return {
-        "subject": s("subject") or "the stickman",
+        "subject": s("subject") or _PROTAGONIST,
         "action": s("action"),
         "object": s("object"),
         "setting": s("setting"),
@@ -233,7 +235,7 @@ def normalize_beat(b: dict | None) -> dict:
 def fallback_beat(narration: str) -> dict:
     """Last resort when the director fails: still literal, still one line."""
     return normalize_beat({
-        "subject": "the stickman",
+        "subject": _PROTAGONIST,
         "action": "acts out this moment",
         "object": one_line(narration),
         "shot": "medium shot",

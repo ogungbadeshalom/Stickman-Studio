@@ -109,7 +109,7 @@ _DIRECTOR_SCHEMA = {
 }
 
 _WRITER_SYSTEM = """\
-You write narration for fast-cut animated explainers (Ink Explainer style, stickman protagonist).
+You write narration for fast-cut animated explainers (Ink Explainer style, cartoon protagonist).
 
 RULES
 1. Line 1 is the HOOK: a shocking fact, a weird question, or an extreme situation. Never "Today we will learn...".
@@ -118,21 +118,21 @@ RULES
 4. ARC: hook -> escalating beats -> payoff or twist in the last lines. Every line adds NEW information; never restate an earlier line.
 5. Plain spoken language. No stage directions, emoji, hashtags or visual instructions.
 
-ENTITIES: list 0-4 recurring non-character things (objects, places, creatures) that appear in 2+ lines. Give each a short snake_case id and a fixed visual description of at most 20 words. Do NOT describe the stickman protagonist.
+ENTITIES: list 0-4 recurring non-character things (objects, places, creatures) that appear in 2+ lines. Give each a short snake_case id and a fixed visual description of at most 20 words. Do NOT describe the cartoon protagonist.
 Also give each line a 2-4 word title.
 """
 
 _DIRECTOR_SYSTEM = """\
-You are the visual director for a stickman explainer. For each narration line, output ONE visual beat that a text-to-image model can draw.
-The protagonist is always "the stickman". His look is injected later: NEVER describe his face, body or clothes.
+You are the visual director for a cartoon explainer. For each narration line, output ONE visual beat that a text-to-image model can draw.
+The protagonist is always "the character". His look is injected later: NEVER describe his face, body or clothes.
 
 FIELDS (keep each under 12 words, plain words):
-- subject: who or what performs the action (usually "the stickman")
+- subject: who or what performs the action (usually "the character")
 - action: one concrete physical verb phrase
 - object: what the action acts on (may be empty)
 - setting: a short location phrase starting with in / on / at ("in a dim garage")
 - shot: one of: wide shot, medium shot, close-up, top-down view, side view, low-angle view
-- pose: the stickman's posture or mood if not neutral (deadpan, panicked, smug...)
+- pose: the character's posture or mood if not neutral (deadpan, panicked, smug...)
 - props: up to 3 extra visible objects
 - entities: ids from the ENTITIES list that appear in the frame
 - metaphor: true only if the line is abstract and you drew a concrete stand-in
