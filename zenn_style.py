@@ -251,10 +251,10 @@ def render_action(beat: dict, entities: dict[str, str] | None = None) -> str:
     if b["setting"]:
         sentence += f" {b['setting']}" if re.match(r"(in|on|at|inside|outside|under|near|beside|behind|above)\b", b["setting"], re.I) else f" in {b['setting']}"
     parts = [sentence + "."]
-    if "stickman" not in core.lower():
-        parts.append(f"The stickman is also in frame, {b['pose'] or 'watching'}.")
+    if _PROTAGONIST not in core.lower():
+        parts.append(f"The {_PROTAGONIST} is also in frame, {b['pose'] or 'watching'}.")
     elif b["pose"]:
-        parts.append(f"Stickman pose and mood: {b['pose']}.")
+        parts.append(f"{_PROTAGONIST.capitalize()} pose and mood: {b['pose']}.")
     if b["props"]:
         parts.append(f"Visible props: {', '.join(b['props'])}.")
     for eid in b["entities"]:
