@@ -28,7 +28,22 @@ ASPECT = os.getenv("ZENN_ASPECT", "vertical 9:16").strip()
 # LONG forms — only used once, to make the character reference sheet.
 # (Old names kept so existing imports don't break.)
 # --------------------------------------------------------------------------
-CHARACTER_LOCK = (
+import os as _os
+
+# Active character comes from env (default = POV cartoon character, NOT stickman,
+# NOT a realistic human). The stickman is preserved below as ZENN_PRESET_STICKMAN
+# and can be restored by setting ZENN_CHARACTER=stickman.
+_ACTIVE_CHAR = _os.getenv("ZENN_CHARACTER", "cartoon").strip().lower()
+
+ZENN_PRESET_STICKMAN = (
+    "The recurring stickman: oversized round head, two solid black dot eyes, "
+    "thin curved eyebrows, tiny curved mouth, no nose or ears, a few short black "
+    "hair strokes on top, slim long limbs, oversized plain green t-shirt, loose "
+    "blue denim shorts with rolled cuffs, plain white sneakers."
+)
+
+# Original stickman (used by CHARACTER_LOCK/REF_LOCK below for the preset)
+_STICKMAN_LONG = (
     "A minimalist stickman character: an oversized round "
     "head, two solid black oval dot eyes, thin curved eyebrow lines, a tiny "
     "simple curved mouth, no nose or ears, no skin texture, a few short black "
@@ -38,8 +53,7 @@ CHARACTER_LOCK = (
     "above the knee with simple front pockets and rolled cuffs, and plain "
     "white low-top sneakers, every clothing shape outlined in clean black."
 )
-
-STYLE_LOCK = (
+_STICKMAN_STYLE = (
     "Clean black hand-drawn-style line art, consistent medium-weight outlines, "
     "simple interior lines, flat color fills, very light gray contact shadow "
     "beneath the character. Minimalist 2D cartoon illustration, restrained "
@@ -47,27 +61,55 @@ STYLE_LOCK = (
     "white. No photorealism, no 3D, no anime, no painterly shading, no neon, "
     "no glossy surfaces, no dramatic lighting."
 )
-
-# --------------------------------------------------------------------------
-# SHORT forms — what actually goes into every scene prompt.
-# Order matters: the scene ACTION goes first so the model weights it most.
-# --------------------------------------------------------------------------
-CHARACTER_SHORT = (
-    "The recurring stickman: oversized round head, two solid black dot eyes, "
-    "thin curved eyebrows, tiny curved mouth, no nose or ears, a few short black "
-    "hair strokes on top, slim long limbs, oversized plain green t-shirt, loose "
-    "blue denim shorts with rolled cuffs, plain white sneakers."
-)
-
-STYLE_SHORT = (
+_STICKMAN_STYLE_SHORT = (
     "Clean black hand-drawn line art, consistent medium-weight outlines, flat "
     "color fills, off-white background, very light gray contact shadow, generous "
     "negative space, minimalist 2D cartoon, restrained palette."
 )
 
+# POV cartoon character: a distinct, friendly flat-2D cartoon person. Not a
+# stickman, not photorealistic. Supporting-cast neutral so it fits the genre.
+_POV_CARTOON = (
+    "The recurring cartoon character: a friendly flat 2D animated person with a "
+    "proportionate round head, big expressive eyes, a soft rounded nose, a simple "
+    "warm smile, tidy short dark hair, a normal neck and shoulders, and smooth "
+    "simple hands and feet. He wears a modern casual outfit — a charcoal crew-neck "
+    "tee or a light overshirt over a plain t-shirt, straight dark jeans, and clean "
+    "white sneakers. Cheerful, understated, easy to read; consistent in every scene."
+)
+
+# Cartoon style lock (matches the POV finance-channel look, flat/clean)
+_POV_STYLE = (
+    "Clean flat 2D cartoon illustration, smooth consistent medium-weight outlines, "
+    "simple interior lines, flat color fills, soft very light contact shadow, "
+    "generous negative space, warm modern off-white background, restrained but "
+    "pleasant palette. Not a stickman, not photorealistic, no 3D, no anime, no "
+    "painterly shading, no neon, no glossy surfaces, no dramatic lighting."
+)
+
+STYLE_LOCK = _POV_STYLE if _ACTIVE_CHAR != "stickman" else _STICKMAN_STYLE
+
+# Long form (used by phase2_images character sheet)
+CHARACTER_LOCK = _STICKMAN_LONG if _ACTIVE_CHAR == "stickman" else (
+    "A friendly flat 2D cartoon character: a proportionate round head, big "
+    "expressive eyes, a soft rounded nose, a simple warm smile, tidy short dark "
+    "hair, a normal neck and shoulders, smooth simple hands and feet. He wears a "
+    "charcoal crew-neck tee or a light overshirt over a plain t-shirt, straight "
+    "dark jeans, and clean white sneakers. Cheerful, understated, easy to read, "
+    "consistent in every scene."
+)
+
+# --------------------------------------------------------------------------
+# SHORT forms — what actually goes into every scene prompt.
+# Order matters: the scene ACTION goes first so the model weights it most.
+# --------------------------------------------------------------------------
+CHARACTER_SHORT = _POV_CARTOON if _ACTIVE_CHAR != "stickman" else ZENN_PRESET_STICKMAN
+
+STYLE_SHORT = _POV_STYLE if _ACTIVE_CHAR != "stickman" else _STICKMAN_STYLE_SHORT
+
 # Used instead of CHARACTER_SHORT + STYLE_SHORT when a Flow reference image is attached.
 REF_LOCK = (
-    "Draw the stickman and the art style exactly as in the attached reference "
+    "Draw the character and the art style exactly as in the attached reference "
     "image (same face, outfit, proportions, line weight, flat colors), on an "
     "off-white background."
 )
