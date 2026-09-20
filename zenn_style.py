@@ -12,7 +12,7 @@ Pure Python, no third-party deps -> safe to import anywhere and unit-test.
 Env:
   ZENN_LOCK_MODE  "text" (default) = short character description in every prompt
                   "ref"            = rely on an uploaded Flow reference image
-  ZENN_ASPECT     composition hint, default "vertical 9:16" ("" to disable)
+  ZENN_ASPECT     composition hint, default "horizontal 16:9" ("" to disable)
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 
 LOCK_MODE = os.getenv("ZENN_LOCK_MODE", "text").strip().lower()
-ASPECT = os.getenv("ZENN_ASPECT", "vertical 9:16").strip()
+ASPECT = os.getenv("ZENN_ASPECT", "horizontal 16:9").strip()
 
 # --------------------------------------------------------------------------
 # LONG forms — only used once, to make the character reference sheet.
@@ -68,14 +68,19 @@ _STICKMAN_STYLE_SHORT = (
 )
 
 # POV cartoon character: a distinct, friendly flat-2D cartoon person. Not a
-# stickman, not photorealistic. Supporting-cast neutral so it fits the genre.
+# stickman, not photorealistic. LOCKED design (verified from the wealth video):
+# dark wavy hair, large white-oval eyes w/ black pupils, light peachy-tan skin,
+# charcoal short-sleeve tee, dark-navy straight jeans, white low-top sneakers,
+# mitten-style hands, ~4.5 heads tall, slim average build.
 _POV_CARTOON = (
-    "The recurring cartoon character: a friendly flat 2D animated person with a "
-    "proportionate round head, big expressive eyes, a soft rounded nose, a simple "
-    "warm smile, tidy short dark hair, a normal neck and shoulders, and smooth "
-    "simple hands and feet. He wears a modern casual outfit — a charcoal crew-neck "
-    "tee or a light overshirt over a plain t-shirt, straight dark jeans, and clean "
-    "white sneakers. Cheerful, understated, easy to read; consistent in every scene."
+    "The recurring cartoon character: a friendly flat 2D young adult man, "
+    "exactly consistent in every scene. Dark brown wavy hair (short sides, fuller "
+    "wavy top), large white oval eyes with black pupils, light peachy-tan skin, "
+    "thin dark eyebrows, a minimal small nose and simple smile, small rounded ears. "
+    "Slim average build roughly 4.5 heads tall. He wears a short-sleeve charcoal "
+    "crew-neck t-shirt, dark navy straight-leg jeans, and white low-top sneakers, "
+    "with simple mitten-style rounded hands. Cheerful, understated, easy to read; "
+    "the SAME face, hair, outfit, proportions and colors in every single scene."
 )
 
 # Cartoon style lock (matches the POV finance-channel look, flat/clean)
@@ -90,14 +95,7 @@ _POV_STYLE = (
 STYLE_LOCK = _POV_STYLE if _ACTIVE_CHAR != "stickman" else _STICKMAN_STYLE
 
 # Long form (used by phase2_images character sheet)
-CHARACTER_LOCK = _STICKMAN_LONG if _ACTIVE_CHAR == "stickman" else (
-    "A friendly flat 2D cartoon character: a proportionate round head, big "
-    "expressive eyes, a soft rounded nose, a simple warm smile, tidy short dark "
-    "hair, a normal neck and shoulders, smooth simple hands and feet. He wears a "
-    "charcoal crew-neck tee or a light overshirt over a plain t-shirt, straight "
-    "dark jeans, and clean white sneakers. Cheerful, understated, easy to read, "
-    "consistent in every scene."
-)
+CHARACTER_LOCK = _STICKMAN_LONG if _ACTIVE_CHAR == "stickman" else _POV_CARTOON
 
 # --------------------------------------------------------------------------
 # SHORT forms — what actually goes into every scene prompt.
