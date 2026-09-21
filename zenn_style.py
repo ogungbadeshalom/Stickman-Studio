@@ -1,49 +1,56 @@
 """
-zenn_style.py — ZENN stickman look + deterministic prompt builder + beat validator.
+zenn_style.py — look + deterministic prompt builder + beat validator + story linter.
 
 Single source of truth for:
   * the character / style text (short forms for per-scene prompts, long forms
     for generating the ONE character reference sheet)
   * turning a structured visual "beat" into an image prompt (no LLM involved)
   * checking that a beat really depicts its narration line (audio-match)
+  * linting the STORY itself (repeats, caption-style narration, id leaks...)
 
 Pure Python, no third-party deps -> safe to import anywhere and unit-test.
 
 Env:
-  ZENN_LOCK_MODE  "text" (default) = short character description in every prompt
-                  "ref"            = rely on an uploaded Flow reference image
-  ZENN_ASPECT     composition hint, default "horizontal 16:9" ("" to disable)
+  ZENN_LOCK_MODE       "text" (default) | "ref"  (Flow reference image attached)
+  ZENN_ASPECT          composition hint, default "vertical 9:16" ("" to disable)
+  ZENN_BACKGROUND      default "off-white background". For scenes with real settings
+                       use e.g. "full-bleed simple flat-color background that matches the setting"
+  ZENN_CHARACTER_FILE  path to a JSON profile that replaces the built-in stickman:
+                       {"name": "the character",           # how prompts refer to him/her
+                        "short": "...45-word identity lock...",
+                        "style_short": "...30-word style lock...",   (optional)
+                        "sheet_long": "...long description for the reference sheet..."} (optional)
+  ZENN_PROTAGONIST     fallback for "name" when no profile file (default "the stickman")
 """
 from __future__ import annotations
 
+import collections
+import json
 import os
 import random
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 LOCK_MODE = os.getenv("ZENN_LOCK_MODE", "text").strip().lower()
-ASPECT = os.getenv("ZENN_ASPECT", "horizontal 16:9").strip()
+ASPECT = os.getenv("ZENN_ASPECT", "vertical 9:16").strip()
+BACKGROUND = os.getenv("ZENN_BACKGROUND", "off-white background").strip()
+
+_PROFILE: dict = {}
+_pf = os.getenv("ZENN_CHARACTER_FILE", "").strip()
+if _pf and Path(_pf).is_file():
+    try:
+        _PROFILE = json.loads(Path(_pf).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        _PROFILE = {}
+
+# How prompts refer to the protagonist. NEVER hard-code "stickman" elsewhere.
+PROTAGONIST = (_PROFILE.get("name") or os.getenv("ZENN_PROTAGONIST", "the stickman")).strip()
 
 # --------------------------------------------------------------------------
 # LONG forms — only used once, to make the character reference sheet.
-# (Old names kept so existing imports don't break.)
 # --------------------------------------------------------------------------
-import os as _os
-
-# Active character comes from env (default = POV cartoon character, NOT stickman,
-# NOT a realistic human). The stickman is preserved below as ZENN_PRESET_STICKMAN
-# and can be restored by setting ZENN_CHARACTER=stickman.
-_ACTIVE_CHAR = _os.getenv("ZENN_CHARACTER", "cartoon").strip().lower()
-
-ZENN_PRESET_STICKMAN = (
-    "The recurring stickman: oversized round head, two solid black dot eyes, "
-    "thin curved eyebrows, tiny curved mouth, no nose or ears, a few short black "
-    "hair strokes on top, slim long limbs, oversized plain green t-shirt, loose "
-    "blue denim shorts with rolled cuffs, plain white sneakers."
-)
-
-# Original stickman (used by CHARACTER_LOCK/REF_LOCK below for the preset)
-_STICKMAN_LONG = (
+CHARACTER_LOCK = _PROFILE.get("sheet_long") or (
     "A minimalist stickman character: an oversized round "
     "head, two solid black oval dot eyes, thin curved eyebrow lines, a tiny "
     "simple curved mouth, no nose or ears, no skin texture, a few short black "
@@ -53,7 +60,8 @@ _STICKMAN_LONG = (
     "above the knee with simple front pockets and rolled cuffs, and plain "
     "white low-top sneakers, every clothing shape outlined in clean black."
 )
-_STICKMAN_STYLE = (
+
+STYLE_LOCK = (
     "Clean black hand-drawn-style line art, consistent medium-weight outlines, "
     "simple interior lines, flat color fills, very light gray contact shadow "
     "beneath the character. Minimalist 2D cartoon illustration, restrained "
@@ -61,59 +69,39 @@ _STICKMAN_STYLE = (
     "white. No photorealism, no 3D, no anime, no painterly shading, no neon, "
     "no glossy surfaces, no dramatic lighting."
 )
-_STICKMAN_STYLE_SHORT = (
-    "Clean black hand-drawn line art, consistent medium-weight outlines, flat "
-    "color fills, off-white background, very light gray contact shadow, generous "
-    "negative space, minimalist 2D cartoon, restrained palette."
-)
-
-# POV cartoon character: a distinct, friendly flat-2D cartoon person. Not a
-# stickman, not photorealistic. LOCKED design (verified from the wealth video):
-# dark wavy hair, large white-oval eyes w/ black pupils, light peachy-tan skin,
-# charcoal short-sleeve tee, dark-navy straight jeans, white low-top sneakers,
-# mitten-style hands, ~4.5 heads tall, slim average build.
-_POV_CARTOON = (
-    "The recurring cartoon character: a friendly flat 2D young adult man, "
-    "exactly consistent in every scene. Dark brown wavy hair (short sides, fuller "
-    "wavy top), large white oval eyes with black pupils, light peachy-tan skin, "
-    "thin dark eyebrows, a minimal small nose and simple smile, small rounded ears. "
-    "Slim average build roughly 4.5 heads tall. He wears a short-sleeve charcoal "
-    "crew-neck t-shirt, dark navy straight-leg jeans, and white low-top sneakers, "
-    "with simple mitten-style rounded hands. Cheerful, understated, easy to read; "
-    "the SAME face, hair, outfit, proportions and colors in every single scene."
-)
-
-# Cartoon style lock (matches the POV finance-channel look, flat/clean)
-_POV_STYLE = (
-    "Clean flat 2D cartoon illustration, smooth consistent medium-weight outlines, "
-    "simple interior lines, flat color fills, soft very light contact shadow, "
-    "generous negative space, warm modern off-white background, restrained but "
-    "pleasant palette. Not a stickman, not photorealistic, no 3D, no anime, no "
-    "painterly shading, no neon, no glossy surfaces, no dramatic lighting."
-)
-
-STYLE_LOCK = _POV_STYLE if _ACTIVE_CHAR != "stickman" else _STICKMAN_STYLE
-
-# Long form (used by phase2_images character sheet)
-CHARACTER_LOCK = _STICKMAN_LONG if _ACTIVE_CHAR == "stickman" else _POV_CARTOON
 
 # --------------------------------------------------------------------------
 # SHORT forms — what actually goes into every scene prompt.
 # Order matters: the scene ACTION goes first so the model weights it most.
 # --------------------------------------------------------------------------
-CHARACTER_SHORT = _POV_CARTOON if _ACTIVE_CHAR != "stickman" else ZENN_PRESET_STICKMAN
+CHARACTER_SHORT = _PROFILE.get("short") or (
+    "The recurring stickman: oversized round head, two solid black dot eyes, "
+    "thin curved eyebrows, tiny curved mouth, no nose or ears, a few short black "
+    "hair strokes on top, slim long limbs, oversized plain green t-shirt, loose "
+    "blue denim shorts with rolled cuffs, plain white sneakers."
+)
 
-STYLE_SHORT = _POV_STYLE if _ACTIVE_CHAR != "stickman" else _STICKMAN_STYLE_SHORT
+STYLE_SHORT = _PROFILE.get("style_short") or (
+    "Clean black hand-drawn line art, consistent medium-weight outlines, flat "
+    f"color fills, {BACKGROUND}, very light gray contact shadow, generous "
+    "negative space, minimalist 2D cartoon, restrained palette."
+)
 
 # Used instead of CHARACTER_SHORT + STYLE_SHORT when a Flow reference image is attached.
 REF_LOCK = (
     "Draw the character and the art style exactly as in the attached reference "
-    "image (same face, outfit, proportions, line weight, flat colors), on an "
-    "off-white background."
+    "image (same face, hair, outfit, proportions, line weight, flat colors). "
+    f"Background: {BACKGROUND}."
+)
+# Reference attached but the character is NOT in this shot: keep the style only.
+REF_STYLE_ONLY = (
+    "Match the art style of the attached reference image exactly (line weight, "
+    f"flat colors), but do not draw the character from it. Background: {BACKGROUND}."
 )
 
 NO_TEXT = "No text, letters, captions, speech bubbles or watermarks anywhere in the image."
 LABEL_MARK = "The only text in the image is"
+ABSENT_MARK = "The main character does not appear in this shot."
 
 SHOTS = ("wide shot", "medium shot", "close-up", "top-down view", "side view", "low-angle view")
 
@@ -123,8 +111,18 @@ def one_line(s: str | None) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
 
 
+def clean_text(s: str | None) -> str:
+    """one_line + underscores -> spaces (entity ids like worn_sneakers must never reach TTS or prompts)."""
+    return one_line((s or "").replace("_", " "))
+
+
 def _cap(s: str) -> str:
     return s[:1].upper() + s[1:] if s else s
+
+
+def _pkey() -> str:
+    """Bare noun of the protagonist name: 'the stickman' -> 'stickman'."""
+    return re.sub(r"^(the|a|an)\s+", "", PROTAGONIST.lower()).strip() or "character"
 
 
 # --------------------------------------------------------------------------
@@ -134,8 +132,11 @@ def full_image_prompt(action: str, mode: str | None = None) -> str:
     """One self-contained image prompt: ACTION first, then identity/style, then guards."""
     mode = (mode or LOCK_MODE).lower()
     action = one_line(action)
+    absent = ABSENT_MARK in action
     if mode == "ref":
-        parts = [action, REF_LOCK]
+        parts = [action, REF_STYLE_ONLY if absent else REF_LOCK]
+    elif absent:
+        parts = [action, STYLE_SHORT]
     else:
         parts = [action, CHARACTER_SHORT, STYLE_SHORT]
     if LABEL_MARK not in action:
@@ -190,6 +191,18 @@ def _norm_shot(x: str) -> str:
     return "medium shot"
 
 
+def _norm_presence(v: str, subject: str) -> str:
+    """full = protagonist visible | partial = first-person POV, hands only | none = not in shot."""
+    v = (v or "").strip().lower()
+    if v.startswith(("full", "in", "yes", "visible")):
+        return "full"
+    if v.startswith(("part", "hand", "pov", "first")):
+        return "partial"
+    if v.startswith(("none", "no", "abs", "off", "out")):
+        return "none"
+    return "full" if _pkey() in (subject or "").lower() else "none"
+
+
 def _as_list(v) -> list[str]:
     if not v:
         return []
@@ -197,32 +210,32 @@ def _as_list(v) -> list[str]:
         v = re.split(r"[;,]", v)
     out = []
     for x in v:
-        x = one_line(str(x))
+        x = clean_text(str(x))
         if x:
             out.append(x)
     return out
 
 
-_PROTAGONIST = "the stickman" if _ACTIVE_CHAR == "stickman" else "the character"
-
 def normalize_beat(b: dict | None) -> dict:
-    """Clean an LLM beat: strings collapsed, shot snapped to SHOTS, text label <= 3 words."""
+    """Clean an LLM beat: strings collapsed, ids de-underscored, shot snapped, label <= 3 words."""
     b = b or {}
 
     def s(k: str) -> str:
-        return one_line(str(b.get(k) or ""))
+        return clean_text(str(b.get(k) or ""))
 
     label = " ".join(s("on_screen_text").split()[:3])
     meta = b.get("metaphor")
     if isinstance(meta, str):
         meta = meta.strip().lower() in ("true", "yes", "1")
+    subject = s("subject") or PROTAGONIST
     return {
-        "subject": s("subject") or _PROTAGONIST,
+        "subject": subject,
         "action": s("action"),
         "object": s("object"),
         "setting": s("setting"),
         "shot": _norm_shot(s("shot")),
         "pose": s("pose"),
+        "presence": _norm_presence(s("presence"), subject),
         "props": _as_list(b.get("props"))[:3],
         "entities": [re.sub(r"[^a-z0-9_]+", "_", e.lower()).strip("_") for e in _as_list(b.get("entities"))],
         "metaphor": bool(meta),
@@ -233,31 +246,60 @@ def normalize_beat(b: dict | None) -> dict:
 def fallback_beat(narration: str) -> dict:
     """Last resort when the director fails: still literal, still one line."""
     return normalize_beat({
-        "subject": _PROTAGONIST,
+        "subject": PROTAGONIST,
         "action": "acts out this moment",
-        "object": one_line(narration),
+        "object": clean_text(narration),
         "shot": "medium shot",
+        "presence": "full",
     })
+
+
+def _mostly_in(part: str, ref: str, thr: float = 0.6) -> bool:
+    """True if >= thr of `part`'s content words already appear in `ref` (avoids 'X ... X' repeats)."""
+    pw = content_words(part)
+    if not pw:
+        return False
+    rw = content_words(ref)
+    hit = sum(1 for w in pw if any(_same(w, r) for r in rw))
+    return hit / len(pw) >= thr
+
+
+_LOC = re.compile(r"(in|on|at|inside|outside|under|near|beside|behind|above)\b", re.I)
 
 
 def render_action(beat: dict, entities: dict[str, str] | None = None) -> str:
     """Beat -> one action sentence. Deterministic: same beat, same prompt."""
     b = normalize_beat(beat)
     entities = entities or {}
-    core = " ".join(x for x in (b["subject"], b["action"], b["object"]) if x)
+    action, obj, setting = b["action"], b["object"], b["setting"]
+    if obj and _mostly_in(obj, f"{b['subject']} {action}"):
+        obj = ""  # object already stated inside the action
+    core = " ".join(x for x in (b["subject"], action, obj) if x)
+    if setting and _mostly_in(setting, core):
+        setting = ""  # setting already stated
     sentence = f"{_cap(b['shot'])}: {_cap(core)}"
-    if b["setting"]:
-        sentence += f" {b['setting']}" if re.match(r"(in|on|at|inside|outside|under|near|beside|behind|above)\b", b["setting"], re.I) else f" in {b['setting']}"
-    parts = [sentence + "."]
-    if _PROTAGONIST not in core.lower():
-        parts.append(f"The {_PROTAGONIST} is also in frame, {b['pose'] or 'watching'}.")
-    elif b["pose"]:
-        parts.append(f"{_PROTAGONIST.capitalize()} pose and mood: {b['pose']}.")
+    if setting:
+        sentence += f" {setting}" if _LOC.match(setting) else f" in {setting}"
+    parts = [sentence.rstrip(".") + "."]
+
+    mentions = _pkey() in core.lower()
+    presence = "full" if mentions else b["presence"]
+    if mentions:
+        if b["pose"]:
+            parts.append(f"Pose and mood: {b['pose']}.")
+    elif presence == "full":
+        parts.append(f"{_cap(PROTAGONIST)} is also in frame{', ' + b['pose'] if b['pose'] else ''}.")
+    elif presence == "partial":
+        parts.append("First-person POV shot: only the character's hands are visible at the edge of the frame.")
+    else:
+        parts.append(ABSENT_MARK)
+
     if b["props"]:
         parts.append(f"Visible props: {', '.join(b['props'])}.")
     for eid in b["entities"]:
         if eid in entities:
-            parts.append(f"{eid.replace('_', ' ').capitalize()} (draw identically every time): {one_line(entities[eid])}.")
+            desc = one_line(entities[eid]).rstrip(".!? ")
+            parts.append(f"{eid.replace('_', ' ').capitalize()} (draw identically every time): {desc}.")
     if b["on_screen_text"]:
         parts.append(f'{LABEL_MARK} the label "{b["on_screen_text"]}".')
     return " ".join(parts)
@@ -373,3 +415,82 @@ def validate_beats(
                     break
             seen_keys.append((i, key))
     return issues
+
+
+# --------------------------------------------------------------------------
+# Story lint: problems in the NARRATION itself (run before beats/images)
+# --------------------------------------------------------------------------
+_SECOND = re.compile(r"\b(you|your|you're|you've|yours)\b", re.I)
+_NUMBERISH = re.compile(
+    r"\d|\b(dollars?|percent|thousand|million|billion|hundred|grand|salary|wage|paycheck|rent|interest)\b", re.I
+)
+
+
+def story_lint(narrations: list[str], pov: bool = True, expect_numbers: bool = True) -> list[dict]:
+    """
+    Returns [{"code", "msg", "scenes": [1-based scene numbers]}].
+    Codes: id_leak | openers | caption_style | second_person | few_numbers | near_duplicates
+    """
+    out: list[dict] = []
+    n = len(narrations)
+    if not n:
+        return out
+
+    leak = [i + 1 for i, t in enumerate(narrations) if "_" in t]
+    if leak:
+        out.append({"code": "id_leak", "scenes": leak,
+                    "msg": f"{len(leak)} lines contain '_' (entity ids leaked into narration; TTS would read them aloud)"})
+
+    firsts = collections.Counter((t.split()[0].lower() if t.split() else "") for t in narrations)
+    word, cnt = firsts.most_common(1)[0]
+    if cnt >= 6 and cnt / n > 0.4:
+        out.append({"code": "openers", "scenes": [],
+                    "msg": f"{cnt}/{n} lines start with '{word}' — monotone rhythm"})
+
+    cap_like = [i + 1 for i, t in enumerate(narrations)
+                if re.match(r"(a|an|the)\b", t.strip(), re.I) and not _SECOND.search(t)]
+    if len(cap_like) / n >= 0.5:
+        out.append({"code": "caption_style", "scenes": cap_like[:20],
+                    "msg": f"{len(cap_like)}/{n} lines read like image captions (object as subject, no 'you'), not narration"})
+
+    if pov:
+        share = sum(1 for t in narrations if _SECOND.search(t)) / n
+        if share < 0.4:
+            out.append({"code": "second_person", "scenes": [],
+                        "msg": f"only {share:.0%} of lines address the viewer as 'you' (POV format expects most)"})
+
+    if expect_numbers:
+        share = sum(1 for t in narrations if _NUMBERISH.search(t)) / n
+        if share < 0.1:
+            out.append({"code": "few_numbers", "scenes": [],
+                        "msg": f"only {share:.0%} of lines contain a number, price, salary or money term"})
+
+    sets = [set(content_words(t)) for t in narrations]
+    dups: list[tuple[int, int]] = []
+    for j in range(n):
+        for i in range(j):
+            if len(sets[i]) < 4 or len(sets[j]) < 4:
+                continue
+            inter = len(sets[i] & sets[j])
+            if inter / len(sets[i] | sets[j]) >= 0.4 or inter >= 5:
+                dups.append((i + 1, j + 1))
+                break
+    if dups:
+        out.append({"code": "near_duplicates", "scenes": [b for _, b in dups],
+                    "msg": "repeated lines: " + ", ".join(f"{b} repeats {a}" for a, b in dups[:10])})
+    return out
+
+
+_WEAR = {"sneakers", "sneaker", "shoes", "shoe", "boots", "shirt", "tee", "jeans", "pants",
+         "shorts", "hat", "cap", "jacket", "hoodie", "sweater", "hair", "glasses"}
+
+
+def entity_conflicts(entities: dict[str, str]) -> dict[str, str]:
+    """Entities that redefine something the character lock already fixes (e.g. 'faded blue sneakers' vs white sneakers)."""
+    lock = set(content_words(CHARACTER_SHORT))
+    bad: dict[str, str] = {}
+    for k, d in entities.items():
+        hit = sorted(w for w in set(content_words(d)) if w in _WEAR and any(_same(w, l) for l in lock))
+        if hit:
+            bad[k] = ", ".join(hit)
+    return bad

@@ -61,7 +61,7 @@ _SCHEMA = {
 }
 
 _SYSTEM = (
-    "You are a strict QA reviewer for a stickman explainer video. Judge ONLY what is visibly drawn. "
+    "You are a strict QA reviewer for an animated explainer video. Judge ONLY what is visibly drawn. "
     "Scores are integers 0-5 (5 = perfect). Be harsh: if a noun or action from the narration is not "
     "clearly visible, matches_narration is at most 3."
 )
@@ -146,6 +146,8 @@ def run(board: StoryBoard, project_dir: Path, ref_image: Path | str | None = Non
             continue
 
         match, char = _clamp(r.get("matches_narration")), _clamp(r.get("character_consistent"))
+        if s.index < len(beats) and beats[s.index].get("presence") == "none":
+            char = 5  # character intentionally absent from this shot: nothing to compare
         wants_label = bool(beats[s.index].get("on_screen_text")) if s.index < len(beats) else False
         text_bad = bool(r.get("text_in_image")) and not wants_label
         ok = match >= MIN_MATCH and char >= MIN_CHAR and not text_bad
